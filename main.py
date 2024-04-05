@@ -1,71 +1,80 @@
 import os
-import markdown
 import yaml
-import fiass
 from ragatouille import RAGPretrainedModel
-from langchain.text_splitter import CharacterTextSplitter, TokenTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
 
-# Function to read MD files from a folder
+# Load configuration from file
+config_file_path = "/Users/nikhitamore/Documents/Rag-using-vector-DB/config.yaml"  # Update with your configuration file path
+
+def load_config(config_file_path):
+    """
+    Load configuration from YAML file.
+
+    :param config_file_path: str - Path to the configuration file.
+    :return: dict - Configuration dictionary.
+    """
+    with open(config_file_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
+config = load_config(config_file_path)
+
+# Extract configuration values
+md_files_folder = config.get('md_files_folder', '')
+vector_database_path = config.get('vector_database_path', '')
+pretrained_model = config.get('rag_model', {}).get('pretrained_model', '')
+example_query = config.get('example_query', '')
+
+# Initialize RAG model
+RAG = RAGPretrainedModel.from_pretrained(pretrained_model)
+
 def read_md_files(folder_path):
-    md_files = []
-    for file in os.listdir(folder_path):
-        if file.endswith(".md"):
-            with open(os.path.join(folder_path, file), "r", encoding="utf-8") as f:
-                md_files.append({"filename": file, "content": f.read()})
-    return md_files
+    """
+    Read and return the content of all Markdown files in a folder.
 
-# Function to convert MD content to plain text
-def md_to_text(md_content):
-    return markdown.markdown(md_content)
+    :param folder_path: str - Path to the folder containing Markdown files.
+    :return: list - List of tuples containing filename and content.
+    """
+    md_files_content = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".md"):
+            with open(os.path.join(folder_path, filename), 'r', encoding='utf-8') as file:
+                content = file.read()
+                md_files_content.append((filename, content))
+    return md_files_content
 
-# Function to generate vectors for documents and store them in a FIASS database
-def generate_vector_database(md_files, vector_db_path):
-    vector_db = FAISS(vector_db_path)  # Initialize FAISS vector store
-    for file_data in md_files:
-        # Convert MD content to plain text
-        text_content = md_to_text(file_data["content"])
-        # Split text into tokens
-        token_text_splitter = TokenTextSplitter()
-        tokens = token_text_splitter.split(text_content)
-        # Generate embeddings for tokens
-        embeddings = HuggingFaceEmbeddings("bert-base-uncased").embed(tokens)  # Use BERT embeddings
-        # Add vectors to the database with metadata
-        vector_db.add(file_data["filename"], embeddings)
-    return vector_db
+def index_md_files(md_files_content):
+    """
+    Index Markdown files using RAG model.
 
-# Function to search for the best similar answer using RAGATOUILLE
-def search_similar_answer(query, rag_model, vector_db):
-    results = rag_model.search(query=query, vector_db=vector_db, k=1)
+    :param md_files_content: list - List of tuples containing filename and content.
+    """
+    for filename, content in md_files_content:
+        RAG.index(
+            collection=[content],
+            document_ids=[filename],
+            document_metadatas=[{"entity": "document", "source": "Markdown"}],
+            index_name=filename,
+            max_document_length=180,  # You can adjust this according to your document length
+            split_documents=True
+        )
+
+def query_index(query, k=10):
+    """
+    Query the indexed documents using RAG model.
+
+    :param query: str - Query string.
+    :param k: int - Number of documents to retrieve.
+    :return: list - List of search results.
+    """
+    results = RAG.search(query=query, k=k)
     return results
 
-def main():
-    # Load configuration from YAML file
-    with open("config.yaml", "r") as config_file:
-        config = yaml.safe_load(config_file)
+# Read Markdown files
+md_files_content = read_md_files(md_files_folder)
 
-    # Access variables from the configuration
-    md_files_folder = config["md_files_folder"]
-    vector_database_path = config["vector_database_path"]
-    rag_model_pretrained_model = config["rag_model"]["pretrained_model"]
-    example_query = config["example_query"]
+# Index Markdown files
+index_md_files(md_files_content)
 
-    # Initialize RAGATOUILLE model
-    rag_model = RAGPretrainedModel.from_pretrained(rag_model_pretrained_model)
-
-    # Read MD files
-    md_files = read_md_files(md_files_folder)
-
-    # Generate vector database
-    vector_db = generate_vector_database(md_files, vector_database_path)
-
-    # Search for similar answer to example query
-    result = search_similar_answer(example_query, rag_model, vector_db)
-    if result:
-        print("Best similar answer:", result[0]["document_metadata"]["filename"])
-    else:
-        print("No similar answer found.")
-
-if __name__ == "__main__":
-    main()
+# Query the indexed documents using the example query
+results = query_index(example_query)
+print(results)
