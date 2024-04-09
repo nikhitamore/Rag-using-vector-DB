@@ -22,7 +22,7 @@ config = load_config(config_file_path)
 md_files_folder = config.get('md_files_folder', '')
 vector_database_path = config.get('vector_database_path', '')
 pretrained_model = config.get('rag_model', {}).get('pretrained_model', '')
-example_query = config.get('example_query', '')
+
 
 # Initialize RAG model
 RAG = RAGPretrainedModel.from_pretrained(pretrained_model)
@@ -54,27 +54,8 @@ def index_md_files(md_files_content):
             document_ids=[filename],
             document_metadatas=[{"entity": "document", "source": "Markdown"}],
             index_name=filename,
-            max_document_length=180,  # You can adjust this according to your document length
+            max_document_length=200,  # You can adjust this according to your document length
             split_documents=True
         )
 
-def query_index(query, k=10):
-    """
-    Query the indexed documents using RAG model.
 
-    :param query: str - Query string.
-    :param k: int - Number of documents to retrieve.
-    :return: list - List of search results.
-    """
-    results = RAG.search(query=query, k=k)
-    return results
-
-# Read Markdown files
-md_files_content = read_md_files(md_files_folder)
-
-# Index Markdown files
-index_md_files(md_files_content)
-
-# Query the indexed documents using the example query
-results = query_index(example_query)
-print(results)
